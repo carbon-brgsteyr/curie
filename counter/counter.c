@@ -111,7 +111,7 @@ int main(void)
         printf("Could not allocate record array.\n");
         goto error1;
     }
-    memset( sampleBlock, SAMPLE_SILENCE, FRAMES_PER_BUFFER * numChannels * SAMPLE_SIZE);
+    memset( sampleBlock, SAMPLE_SILENCE, numBytes);
 
     float *floatBlock = (float *)sampleBlock;
 
