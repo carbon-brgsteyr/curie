@@ -1,17 +1,22 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <inttypes.h>
+#include <math.h>
+#include <time.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "portaudio.h"
 
 // #define SAMPLE_RATE  (17932) // Test failure to open with this value.
-#define SAMPLE_RATE       (44100)
+#define SAMPLE_RATE         (44100)
 #define FRAMES_PER_BUFFER   (512)
-#define NUM_SECONDS          (60*60)
-// #define DITHER_FLAG     (paDitherOff)
-#define DITHER_FLAG           (0)
+#define NUM_SECONDS         (6)
+#define TIME_LIMIT          (false)
+// #define DITHER_FLAG         (paDitherOff)
+#define DITHER_FLAG         (0)
 
 // Select sample format.
 #if 1
@@ -46,7 +51,23 @@
 #define PRINTF_S_FORMAT "%d"
 #endif
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    int opt;
+
+    bool debug = false;
+    bool echo = false;
+
+    while ((opt = getopt(argc, argv, ":de")) != -1) {
+        switch (opt) {
+            case 'd':
+                debug = true;
+                break;
+            case 'e':
+                echo = true;
+                break;
+        }
+    }
+
     PaStreamParameters inputParameters;
     PaStreamParameters outputParameters;
     PaStream *stream = NULL;
@@ -56,35 +77,37 @@ int main(void) {
     char *sampleBlock = NULL;
     size_t numBytes;
     size_t numChannels;
-
-    printf("patest_read_write_wire.c\n");
-    printf("sizeof(int) = %lu\n", sizeof(int));
-    printf("sizeof(long) = %lu\n", sizeof(long));
-    fflush(stdout);
-
+    
     err = Pa_Initialize();
     if (err != paNoError) goto error2;
 
     inputParameters.device = Pa_GetDefaultInputDevice();    // default input device
-    printf("Input device # %d.\n", inputParameters.device);
     inputInfo = Pa_GetDeviceInfo(inputParameters.device);
-    printf("    Name: %s\n", inputInfo->name);
-    printf("      LL: %g s\n", inputInfo->defaultLowInputLatency);
-    printf("      HL: %g s\n", inputInfo->defaultHighInputLatency);
 
     outputParameters.device = Pa_GetDefaultOutputDevice();  // default output device
-    printf("Output device # %d.\n", outputParameters.device);
     outputInfo = Pa_GetDeviceInfo(outputParameters.device);
-    printf("   Name: %s\n", outputInfo->name);
-    printf("     LL: %g s\n", outputInfo->defaultLowOutputLatency);
-    printf("     HL: %g s\n", outputInfo->defaultHighOutputLatency);
+    
+    if (debug) {
+        printf("Input device # %d.\n", inputParameters.device);
+        printf("    Name: %s\n", inputInfo->name);
+        printf("      LL: %g s\n", inputInfo->defaultLowInputLatency);
+        printf("      HL: %g s\n", inputInfo->defaultHighInputLatency);
+
+        printf("Output device # %d.\n", outputParameters.device);
+        printf("   Name: %s\n", outputInfo->name);
+        printf("     LL: %g s\n", outputInfo->defaultLowOutputLatency);
+        printf("     HL: %g s\n", outputInfo->defaultHighOutputLatency);
+    }
     
     numChannels = inputInfo->maxInputChannels < outputInfo->maxOutputChannels
         ? inputInfo->maxInputChannels
         : outputInfo->maxOutputChannels;
 
     numChannels = 2;
-    printf("Num channels = %zu.\n", numChannels);
+    
+    if (debug) {
+        printf("Num channels = %zu.\n", numChannels);
+    }
 
     inputParameters.channelCount = numChannels;
     inputParameters.sampleFormat = PA_SAMPLE_TYPE;
@@ -106,11 +129,11 @@ int main(void) {
         paClipOff,          // we won't output out of range samples so don't bother clipping them
         NULL,               // no callback, use blocking API
         NULL);              // no callback, so no callback userData
-    if(err != paNoError) goto error2;
+    if (err != paNoError) goto error2;
 
     numBytes = FRAMES_PER_BUFFER * numChannels * SAMPLE_SIZE;
     sampleBlock = (char *)malloc(numBytes);
-    if(sampleBlock == NULL) {
+    if (sampleBlock == NULL) {
         printf("Could not allocate record array.\n");
         goto error1;
     }
@@ -120,35 +143,46 @@ int main(void) {
 
     err = Pa_StartStream(stream);
     if (err != paNoError) goto error1;
-    printf("Wire on. Will run %d seconds.\n", NUM_SECONDS);
-    fflush(stdout);
+    
+    if (debug) {
+        printf("Start: %lu\n", (uint64_t)time(NULL));
+        if (TIME_LIMIT) {
+            printf("Will run %d seconds.\n", NUM_SECONDS);
+        }
+        else {
+            printf("Will run indefinitely.\n");
+        }
+        fflush(stdout);
+    }
 
     // recorded channel
     size_t channel = 0;
     
     uint64_t count = 0;
-    uint16_t state = 0;
-    float pos = 0.5;
-    float neg = -0.5;
+    bool state = 0;
+    float positive = 0.5;
+    float negative = -0.5;
 
-    for (size_t i = 0; i < (NUM_SECONDS * SAMPLE_RATE) / FRAMES_PER_BUFFER; ++i) {
+    for (size_t i = 0; !TIME_LIMIT || i < (NUM_SECONDS * SAMPLE_RATE) / FRAMES_PER_BUFFER; ++i) {
         // You may get underruns or overruns if the output is not primed by PortAudio.
-        for (size_t j = 0; j < FRAMES_PER_BUFFER; j++) {
-            for (size_t k = 0; k < numChannels; k++) {
-                // floatBlock[j * numChannels + k] = sin(0.05 * (i * FRAMES_PER_BUFFER + j));
-            }
+        if (echo) {
+            err = Pa_WriteStream(stream, sampleBlock, FRAMES_PER_BUFFER);
+            if (err) goto xrun;
         }
-        // err = Pa_WriteStream(stream, sampleBlock, FRAMES_PER_BUFFER);
-        if (err) goto xrun;
-        err = Pa_ReadStream( stream, sampleBlock, FRAMES_PER_BUFFER );
+        err = Pa_ReadStream(stream, sampleBlock, FRAMES_PER_BUFFER);
         if (err) goto xrun;
         for (size_t j = 0; j < FRAMES_PER_BUFFER; j++) {
             float f = floatBlock[j * numChannels + channel];
-            if (state == 0 && f > pos) state = 1;
-            if (state == 1 && f < neg) {
-                state = 0;
+            if (!state && f > positive) state = true;
+            if (state && f < negative) {
+                state = false;
                 count++;
-                printf("\r%lu", count);
+                if (debug) {
+                    printf("\r%lu", count);
+                }
+                else {
+                    printf("\n");
+                }
                 fflush(stdout);
             }
             // if (f > 0.50) printf("%*.2f\n", 10, f);
