@@ -68,6 +68,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    FILE *fp = fopen("./log", "a");
+    fprintf(fp, "lorem ipsum\n");
+    fflush(fp);
+
     PaStreamParameters inputParameters;
     PaStreamParameters outputParameters;
     PaStream *stream = NULL;
@@ -198,10 +202,12 @@ int main(int argc, char *argv[]) {
     free(sampleBlock);
 
     Pa_Terminate();
+
+    fclose(fp);
     return 0;
 
 xrun:
-    printf("err = %d\n", err);
+    fprintf(stderr, "err = %d\n", err);
     fflush(stdout);
 
     if (stream) {
@@ -216,6 +222,7 @@ xrun:
     if (err & paOutputUnderflow) {
         fprintf(stderr, "Output Underflow.\n");
     }
+    fclose(fp);
     return -2;
 error1:
     free(sampleBlock);
@@ -228,5 +235,7 @@ error2:
     fprintf(stderr, "An error occurred while using the portaudio stream\n");
     fprintf(stderr, "Error number: %d\n", err);
     fprintf(stderr, "Error message: %s\n", Pa_GetErrorText(err));
+
+    fclose(fp);
     return -1;
 }

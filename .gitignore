@@ -1,2 +1,5 @@
 counter/counter
-counter/compile_commands.json
+detector/detector
+*/log
+*/compile_commands.json
+*/.cache/**
